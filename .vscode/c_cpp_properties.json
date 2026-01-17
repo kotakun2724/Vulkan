@@ -1,0 +1,20 @@
+{
+  "configurations": [
+    {
+      "name": "macOS",
+      "compilerPath": "/usr/bin/clang++",
+      "compileCommands": "/Users/kota/Vulkan/build/compile_commands.json",
+      "intelliSenseMode": "macos-clang-arm64",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "/opt/homebrew/include",
+        "${env:VULKAN_SDK}/Include",
+        "${env:VULKAN_SDK}/include"
+      ]
+    }
+  ],
+  "version": 4
+}
+

@@ -1,6 +1,9 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -40,6 +43,10 @@ struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities{};
     std::vector<VkSurfaceFormatKHR> formats;
     std::vector<VkPresentModeKHR> presentModes;
+};
+
+struct UniformBufferObject {
+    std::array<float, 16> transform{};
 };
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
@@ -99,11 +106,17 @@ class VulkanApp {
     VkExtent2D swapChainExtent_{};
     std::vector<VkImageView> swapChainImageViews_;
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> swapChainFramebuffers_;
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> commandBuffers_;
+    std::vector<VkBuffer> uniformBuffers_;
+    std::vector<VkDeviceMemory> uniformBuffersMemory_;
+    std::vector<void*> uniformBuffersMapped_;
+    VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> descriptorSets_;
     std::vector<VkSemaphore> imageAvailableSemaphores_;
     std::vector<VkSemaphore> renderFinishedSemaphores_;
     std::vector<VkFence> inFlightFences_;
@@ -135,9 +148,13 @@ class VulkanApp {
         CreateSwapChain();
         CreateImageViews();
         CreateRenderPass();
+        CreateDescriptorSetLayout();
         CreateGraphicsPipeline();
         CreateFramebuffers();
         CreateCommandPool();
+        CreateUniformBuffers();
+        CreateDescriptorPool();
+        CreateDescriptorSets();
         CreateCommandBuffers();
         CreateSyncObjects();
     }
@@ -172,6 +189,19 @@ class VulkanApp {
         }
         swapChainImageViews_.clear();
 
+        if (descriptorPool_ != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
+            descriptorPool_ = VK_NULL_HANDLE;
+        }
+        for (size_t i = 0; i < uniformBuffers_.size(); ++i) {
+            vkDestroyBuffer(device_, uniformBuffers_[i], nullptr);
+            vkFreeMemory(device_, uniformBuffersMemory_[i], nullptr);
+        }
+        uniformBuffers_.clear();
+        uniformBuffersMemory_.clear();
+        uniformBuffersMapped_.clear();
+        descriptorSets_.clear();
+
         vkDestroySwapchainKHR(device_, swapChain_, nullptr);
     }
 
@@ -184,6 +214,7 @@ class VulkanApp {
             vkDestroyFence(device_, inFlightFences_[i], nullptr);
         }
 
+        vkDestroyDescriptorSetLayout(device_, descriptorSetLayout_, nullptr);
         vkDestroyCommandPool(device_, commandPool_, nullptr);
         vkDestroyDevice(device_, nullptr);
 
@@ -214,6 +245,9 @@ class VulkanApp {
         CreateImageViews();
         CreateRenderPass();
         CreateGraphicsPipeline();
+        CreateUniformBuffers();
+        CreateDescriptorPool();
+        CreateDescriptorSets();
         CreateFramebuffers();
         CreateCommandBuffers();
     }
@@ -492,6 +526,25 @@ class VulkanApp {
         }
     }
 
+    void CreateDescriptorSetLayout() {
+        VkDescriptorSetLayoutBinding uboLayoutBinding{};
+        uboLayoutBinding.binding = 0;
+        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboLayoutBinding.descriptorCount = 1;
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        uboLayoutBinding.pImmutableSamplers = nullptr;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = 1;
+        layoutInfo.pBindings = &uboLayoutBinding;
+
+        if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr,
+                                        &descriptorSetLayout_) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor set layout");
+        }
+    }
+
     VkShaderModule CreateShaderModule(const std::vector<char>& code) {
         VkShaderModuleCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -597,6 +650,8 @@ class VulkanApp {
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType =
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutInfo.setLayoutCount = 1;
+        pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout_;
 
         if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr,
                                    &pipelineLayout_) != VK_SUCCESS) {
@@ -663,6 +718,76 @@ class VulkanApp {
         }
     }
 
+    void CreateUniformBuffers() {
+        VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+        uniformBuffers_.resize(swapChainImages_.size());
+        uniformBuffersMemory_.resize(swapChainImages_.size());
+        uniformBuffersMapped_.resize(swapChainImages_.size());
+
+        for (size_t i = 0; i < swapChainImages_.size(); ++i) {
+            CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         uniformBuffers_[i], uniformBuffersMemory_[i]);
+            if (vkMapMemory(device_, uniformBuffersMemory_[i], 0, bufferSize, 0,
+                            &uniformBuffersMapped_[i]) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to map uniform buffer memory");
+            }
+        }
+    }
+
+    void CreateDescriptorPool() {
+        VkDescriptorPoolSize poolSize{};
+        poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages_.size());
+
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+        poolInfo.maxSets = static_cast<uint32_t>(swapChainImages_.size());
+
+        if (vkCreateDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool_) !=
+            VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor pool");
+        }
+    }
+
+    void CreateDescriptorSets() {
+        std::vector<VkDescriptorSetLayout> layouts(swapChainImages_.size(),
+                                                   descriptorSetLayout_);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool_;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages_.size());
+        allocInfo.pSetLayouts = layouts.data();
+
+        descriptorSets_.resize(swapChainImages_.size());
+        if (vkAllocateDescriptorSets(device_, &allocInfo, descriptorSets_.data()) !=
+            VK_SUCCESS) {
+            throw std::runtime_error("Failed to allocate descriptor sets");
+        }
+
+        for (size_t i = 0; i < swapChainImages_.size(); ++i) {
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = uniformBuffers_[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject);
+
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = descriptorSets_[i];
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pBufferInfo = &bufferInfo;
+
+            vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+        }
+    }
+
     void CreateCommandBuffers() {
         commandBuffers_.resize(swapChainFramebuffers_.size());
 
@@ -704,6 +829,10 @@ class VulkanApp {
             vkCmdBindPipeline(commandBuffers_[i],
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               graphicsPipeline_);
+            vkCmdBindDescriptorSets(commandBuffers_[i],
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    pipelineLayout_, 0, 1, &descriptorSets_[i],
+                                    0, nullptr);
             vkCmdDraw(commandBuffers_[i], 3, 1, 0, 0);
             vkCmdEndRenderPass(commandBuffers_[i]);
 
@@ -762,6 +891,7 @@ class VulkanApp {
                             UINT64_MAX);
         }
         imagesInFlight_[imageIndex] = inFlightFences_[currentFrame_];
+        UpdateUniformBuffer(imageIndex);
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -807,6 +937,79 @@ class VulkanApp {
         }
 
         currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
+    }
+
+    void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                      VkMemoryPropertyFlags properties, VkBuffer& buffer,
+                      VkDeviceMemory& bufferMemory) {
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = size;
+        bufferInfo.usage = usage;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateBuffer(device_, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create buffer");
+        }
+
+        VkMemoryRequirements memRequirements;
+        vkGetBufferMemoryRequirements(device_, buffer, &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex =
+            FindMemoryType(memRequirements.memoryTypeBits, properties);
+
+        if (vkAllocateMemory(device_, &allocInfo, nullptr, &bufferMemory) !=
+            VK_SUCCESS) {
+            throw std::runtime_error("Failed to allocate buffer memory");
+        }
+
+        vkBindBufferMemory(device_, buffer, bufferMemory, 0);
+    }
+
+    uint32_t FindMemoryType(uint32_t typeFilter,
+                            VkMemoryPropertyFlags properties) const {
+        VkPhysicalDeviceMemoryProperties memProperties;
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice_, &memProperties);
+
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
+            if ((typeFilter & (1 << i)) &&
+                (memProperties.memoryTypes[i].propertyFlags & properties) ==
+                    properties) {
+                return i;
+            }
+        }
+
+        throw std::runtime_error("Failed to find suitable memory type");
+    }
+
+    void UpdateUniformBuffer(uint32_t currentImage) {
+        static auto startTime = std::chrono::high_resolution_clock::now();
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float time =
+            std::chrono::duration<float>(currentTime - startTime).count();
+
+        UniformBufferObject ubo{};
+        ubo.transform = BuildTransform(time);
+
+        std::memcpy(uniformBuffersMapped_[currentImage], &ubo, sizeof(ubo));
+    }
+
+    std::array<float, 16> BuildTransform(float time) const {
+        float angle = time;
+        float cosA = std::cos(angle);
+        float sinA = std::sin(angle);
+        float tx = 0.35f * std::sin(time * 0.8f);
+        float ty = 0.35f * std::cos(time * 0.6f);
+
+        return {
+            cosA,  sinA,  0.0f, 0.0f,
+           -sinA,  cosA,  0.0f, 0.0f,
+            0.0f,  0.0f,  1.0f, 0.0f,
+            tx,    ty,    0.0f, 1.0f,
+        };
     }
 
     std::vector<const char*> GetRequiredExtensions() {

@@ -2,6 +2,10 @@
 
 macOSでVulkan SDK（MoltenVK同梱）を使い、GLFWでウィンドウを作成して三角形を描画します。
 
+## スクリーンショット
+
+![Vulkan Triangle](<スクリーンショット 2026-01-17 16.14.40.png>)
+
 ## 事前準備
 
 ### 1. Vulkan SDK のインストール

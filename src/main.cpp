@@ -2,8 +2,7 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
-#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -48,6 +47,44 @@ struct SwapChainSupportDetails {
 struct UniformBufferObject {
     std::array<float, 16> transform{};
 };
+
+struct Vertex {
+    float position[2];
+    float color[3];
+
+    static VkVertexInputBindingDescription GetBindingDescription() {
+        VkVertexInputBindingDescription bindingDescription{};
+        bindingDescription.binding = 0;
+        bindingDescription.stride = sizeof(Vertex);
+        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        return bindingDescription;
+    }
+
+    static std::array<VkVertexInputAttributeDescription, 2>
+    GetAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+        attributeDescriptions[0].binding = 0;
+        attributeDescriptions[0].location = 0;
+        attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[0].offset = offsetof(Vertex, position);
+
+        attributeDescriptions[1].binding = 0;
+        attributeDescriptions[1].location = 1;
+        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+        return attributeDescriptions;
+    }
+};
+
+const std::vector<Vertex> kVertices = {
+    {{-0.5f, -0.5f}, {1.0f, 0.2f, 0.2f}},
+    {{0.5f, -0.5f}, {0.2f, 1.0f, 0.2f}},
+    {{0.5f, 0.5f}, {0.2f, 0.2f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 0.2f}},
+};
+
+const std::vector<uint16_t> kIndices = {0, 1, 2, 2, 3, 0};
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
@@ -112,6 +149,10 @@ class VulkanApp {
     std::vector<VkFramebuffer> swapChainFramebuffers_;
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> commandBuffers_;
+    VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
+    VkBuffer indexBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory indexBufferMemory_ = VK_NULL_HANDLE;
     std::vector<VkBuffer> uniformBuffers_;
     std::vector<VkDeviceMemory> uniformBuffersMemory_;
     std::vector<void*> uniformBuffersMapped_;
@@ -152,6 +193,8 @@ class VulkanApp {
         CreateGraphicsPipeline();
         CreateFramebuffers();
         CreateCommandPool();
+        CreateVertexBuffer();
+        CreateIndexBuffer();
         CreateUniformBuffers();
         CreateDescriptorPool();
         CreateDescriptorSets();
@@ -214,6 +257,10 @@ class VulkanApp {
             vkDestroyFence(device_, inFlightFences_[i], nullptr);
         }
 
+        vkDestroyBuffer(device_, indexBuffer_, nullptr);
+        vkFreeMemory(device_, indexBufferMemory_, nullptr);
+        vkDestroyBuffer(device_, vertexBuffer_, nullptr);
+        vkFreeMemory(device_, vertexBufferMemory_, nullptr);
         vkDestroyDescriptorSetLayout(device_, descriptorSetLayout_, nullptr);
         vkDestroyCommandPool(device_, commandPool_, nullptr);
         vkDestroyDevice(device_, nullptr);
@@ -583,11 +630,18 @@ class VulkanApp {
         VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo,
                                                           fragShaderStageInfo};
 
+        auto bindingDescription = Vertex::GetBindingDescription();
+        auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType =
             VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = 0;
-        vertexInputInfo.vertexAttributeDescriptionCount = 0;
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+        vertexInputInfo.vertexAttributeDescriptionCount =
+            static_cast<uint32_t>(attributeDescriptions.size());
+        vertexInputInfo.pVertexAttributeDescriptions =
+            attributeDescriptions.data();
 
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
         inputAssembly.sType =
@@ -718,6 +772,102 @@ class VulkanApp {
         }
     }
 
+    VkCommandBuffer BeginSingleTimeCommands() {
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = commandPool_;
+        allocInfo.commandBufferCount = 1;
+
+        VkCommandBuffer commandBuffer;
+        vkAllocateCommandBuffers(device_, &allocInfo, &commandBuffer);
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+        return commandBuffer;
+    }
+
+    void EndSingleTimeCommands(VkCommandBuffer commandBuffer) {
+        vkEndCommandBuffer(commandBuffer);
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        vkQueueSubmit(graphicsQueue_, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue_);
+
+        vkFreeCommandBuffers(device_, commandPool_, 1, &commandBuffer);
+    }
+
+    void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+        VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+
+        VkBufferCopy copyRegion{};
+        copyRegion.size = size;
+        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+        EndSingleTimeCommands(commandBuffer);
+    }
+
+    void CreateVertexBuffer() {
+        VkDeviceSize bufferSize = sizeof(kVertices[0]) * kVertices.size();
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     stagingBuffer, stagingBufferMemory);
+
+        void* data = nullptr;
+        vkMapMemory(device_, stagingBufferMemory, 0, bufferSize, 0, &data);
+        std::memcpy(data, kVertices.data(), static_cast<size_t>(bufferSize));
+        vkUnmapMemory(device_, stagingBufferMemory);
+
+        CreateBuffer(bufferSize,
+                     VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer_,
+                     vertexBufferMemory_);
+
+        CopyBuffer(stagingBuffer, vertexBuffer_, bufferSize);
+
+        vkDestroyBuffer(device_, stagingBuffer, nullptr);
+        vkFreeMemory(device_, stagingBufferMemory, nullptr);
+    }
+
+    void CreateIndexBuffer() {
+        VkDeviceSize bufferSize = sizeof(kIndices[0]) * kIndices.size();
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     stagingBuffer, stagingBufferMemory);
+
+        void* data = nullptr;
+        vkMapMemory(device_, stagingBufferMemory, 0, bufferSize, 0, &data);
+        std::memcpy(data, kIndices.data(), static_cast<size_t>(bufferSize));
+        vkUnmapMemory(device_, stagingBufferMemory);
+
+        CreateBuffer(bufferSize,
+                     VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer_,
+                     indexBufferMemory_);
+
+        CopyBuffer(stagingBuffer, indexBuffer_, bufferSize);
+
+        vkDestroyBuffer(device_, stagingBuffer, nullptr);
+        vkFreeMemory(device_, stagingBufferMemory, nullptr);
+    }
+
     void CreateUniformBuffers() {
         VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
@@ -740,7 +890,8 @@ class VulkanApp {
     void CreateDescriptorPool() {
         VkDescriptorPoolSize poolSize{};
         poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages_.size());
+        poolSize.descriptorCount =
+            static_cast<uint32_t>(swapChainImages_.size());
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -748,8 +899,8 @@ class VulkanApp {
         poolInfo.pPoolSizes = &poolSize;
         poolInfo.maxSets = static_cast<uint32_t>(swapChainImages_.size());
 
-        if (vkCreateDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool_) !=
-            VK_SUCCESS) {
+        if (vkCreateDescriptorPool(device_, &poolInfo, nullptr,
+                                   &descriptorPool_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create descriptor pool");
         }
     }
@@ -760,12 +911,13 @@ class VulkanApp {
         VkDescriptorSetAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocInfo.descriptorPool = descriptorPool_;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages_.size());
+        allocInfo.descriptorSetCount =
+            static_cast<uint32_t>(swapChainImages_.size());
         allocInfo.pSetLayouts = layouts.data();
 
         descriptorSets_.resize(swapChainImages_.size());
-        if (vkAllocateDescriptorSets(device_, &allocInfo, descriptorSets_.data()) !=
-            VK_SUCCESS) {
+        if (vkAllocateDescriptorSets(device_, &allocInfo,
+                                     descriptorSets_.data()) != VK_SUCCESS) {
             throw std::runtime_error("Failed to allocate descriptor sets");
         }
 
@@ -829,11 +981,18 @@ class VulkanApp {
             vkCmdBindPipeline(commandBuffers_[i],
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               graphicsPipeline_);
-            vkCmdBindDescriptorSets(commandBuffers_[i],
-                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipelineLayout_, 0, 1, &descriptorSets_[i],
-                                    0, nullptr);
-            vkCmdDraw(commandBuffers_[i], 3, 1, 0, 0);
+            VkBuffer vertexBuffers[] = {vertexBuffer_};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBuffers_[i], 0, 1, vertexBuffers,
+                                   offsets);
+            vkCmdBindIndexBuffer(commandBuffers_[i], indexBuffer_, 0,
+                                 VK_INDEX_TYPE_UINT16);
+            vkCmdBindDescriptorSets(
+                commandBuffers_[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipelineLayout_, 0, 1, &descriptorSets_[i], 0, nullptr);
+            vkCmdDrawIndexed(commandBuffers_[i],
+                             static_cast<uint32_t>(kIndices.size()), 1, 0, 0,
+                             0);
             vkCmdEndRenderPass(commandBuffers_[i]);
 
             if (vkEndCommandBuffer(commandBuffers_[i]) != VK_SUCCESS) {
@@ -948,7 +1107,8 @@ class VulkanApp {
         bufferInfo.usage = usage;
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateBuffer(device_, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        if (vkCreateBuffer(device_, &bufferInfo, nullptr, &buffer) !=
+            VK_SUCCESS) {
             throw std::runtime_error("Failed to create buffer");
         }
 
@@ -986,29 +1146,16 @@ class VulkanApp {
     }
 
     void UpdateUniformBuffer(uint32_t currentImage) {
-        static auto startTime = std::chrono::high_resolution_clock::now();
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float time =
-            std::chrono::duration<float>(currentTime - startTime).count();
-
         UniformBufferObject ubo{};
-        ubo.transform = BuildTransform(time);
+        ubo.transform = BuildTransform();
 
         std::memcpy(uniformBuffersMapped_[currentImage], &ubo, sizeof(ubo));
     }
 
-    std::array<float, 16> BuildTransform(float time) const {
-        float angle = time;
-        float cosA = std::cos(angle);
-        float sinA = std::sin(angle);
-        float tx = 0.35f * std::sin(time * 0.8f);
-        float ty = 0.35f * std::cos(time * 0.6f);
-
+    std::array<float, 16> BuildTransform() const {
         return {
-            cosA,  sinA,  0.0f, 0.0f,
-           -sinA,  cosA,  0.0f, 0.0f,
-            0.0f,  0.0f,  1.0f, 0.0f,
-            tx,    ty,    0.0f, 1.0f,
+            1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
         };
     }
 

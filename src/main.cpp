@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -186,7 +186,7 @@ class VulkanApp {
             throw std::runtime_error("Failed to initialize GLFW");
         }
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window_ = glfwCreateWindow(kWidth, kHeight, "Vulkan Triangle", nullptr,
+        window_ = glfwCreateWindow(kWidth, kHeight, "Vulkan Cube", nullptr,
                                    nullptr);
         if (!window_) {
             glfwTerminate();
@@ -578,7 +578,8 @@ class VulkanApp {
 
         VkAttachmentReference depthAttachmentRef{};
         depthAttachmentRef.attachment = 1;
-        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthAttachmentRef.layout =
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -589,11 +590,13 @@ class VulkanApp {
         VkSubpassDependency dependency{};
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
         dependency.dstSubpass = 0;
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.srcStageMask =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         dependency.srcAccessMask = 0;
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstStageMask =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
@@ -828,8 +831,8 @@ class VulkanApp {
     void CreateDepthResources() {
         VkFormat depthFormat = FindDepthFormat();
 
-        CreateImage(swapChainExtent_.width, swapChainExtent_.height, depthFormat,
-                    VK_IMAGE_TILING_OPTIMAL,
+        CreateImage(swapChainExtent_.width, swapChainExtent_.height,
+                    depthFormat, VK_IMAGE_TILING_OPTIMAL,
                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage_,
                     depthImageMemory_);
@@ -929,7 +932,8 @@ class VulkanApp {
                                  VkFormatFeatureFlags features) {
         for (VkFormat format : candidates) {
             VkFormatProperties props;
-            vkGetPhysicalDeviceFormatProperties(physicalDevice_, format, &props);
+            vkGetPhysicalDeviceFormatProperties(physicalDevice_, format,
+                                                &props);
 
             if (tiling == VK_IMAGE_TILING_LINEAR &&
                 (props.linearTilingFeatures & features) == features) {
@@ -1334,7 +1338,7 @@ class VulkanApp {
     std::array<float, 16> BuildTransform() const {
         float aspect = static_cast<float>(swapChainExtent_.width) /
                        static_cast<float>(swapChainExtent_.height);
-        auto model = IdentityMatrix();
+        auto model = RotationYMatrix(30.0f);
         auto view = TranslationMatrix(0.0f, 0.0f, -2.5f);
         auto projection = PerspectiveMatrix(45.0f, aspect, 0.1f, 10.0f);
         return MultiplyMatrix(projection, MultiplyMatrix(view, model));
@@ -1346,6 +1350,17 @@ class VulkanApp {
             0.0f, 1.0f, 0.0f, 0.0f,  //
             0.0f, 0.0f, 1.0f, 0.0f,  //
             0.0f, 0.0f, 0.0f, 1.0f,  //
+        };
+    }
+
+    std::array<float, 16> RotationYMatrix(float degrees) const {
+        constexpr float kPi = 3.1415926535f;
+        float r = degrees * kPi / 180.0f;
+        float c = std::cos(r);
+        float s = std::sin(r);
+        return {
+            c,  0.0f, s, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+            -s, 0.0f, c, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
         };
     }
 
@@ -1377,11 +1392,10 @@ class VulkanApp {
         std::array<float, 16> result{};
         for (int col = 0; col < 4; ++col) {
             for (int row = 0; row < 4; ++row) {
-                result[col * 4 + row] =
-                    a[0 * 4 + row] * b[col * 4 + 0] +
-                    a[1 * 4 + row] * b[col * 4 + 1] +
-                    a[2 * 4 + row] * b[col * 4 + 2] +
-                    a[3 * 4 + row] * b[col * 4 + 3];
+                result[col * 4 + row] = a[0 * 4 + row] * b[col * 4 + 0] +
+                                        a[1 * 4 + row] * b[col * 4 + 1] +
+                                        a[2 * 4 + row] * b[col * 4 + 2] +
+                                        a[3 * 4 + row] * b[col * 4 + 3];
             }
         }
         return result;

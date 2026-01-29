@@ -1,7 +1,6 @@
-# Vulkan Triangle (macOS + MoltenVK)
+# Vulkan Cube (macOS + MoltenVK)
 
-macOSでVulkan SDK（MoltenVK同梱）を使い、GLFWでウィンドウを作成して三角形を描画します。
-ユニフォームバッファで回転・移動アニメーションを加えています。
+macOSでVulkan SDK（MoltenVK同梱）を使い、GLFWでウィンドウを作成して3D立方体を描画します。
 
 ## スクリーンショット
 
@@ -39,7 +38,7 @@ cmake --build .
 ## 実行
 
 ```
-./vulkan_triangle
+./vulkan_cube
 ```
 
 ## 補足

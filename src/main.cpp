@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +20,7 @@ namespace {
 constexpr uint32_t kWidth = 800;
 constexpr uint32_t kHeight = 600;
 constexpr int kMaxFramesInFlight = 2;
+constexpr float kRotationSpeedDegrees = 45.0f;
 
 const std::vector<const char*> kValidationLayers = {
     "VK_LAYER_KHRONOS_validation",
@@ -186,8 +188,8 @@ class VulkanApp {
             throw std::runtime_error("Failed to initialize GLFW");
         }
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window_ = glfwCreateWindow(kWidth, kHeight, "Vulkan Cube", nullptr,
-                                   nullptr);
+        window_ =
+            glfwCreateWindow(kWidth, kHeight, "Vulkan Cube", nullptr, nullptr);
         if (!window_) {
             glfwTerminate();
             throw std::runtime_error("Failed to create GLFW window");
@@ -1329,16 +1331,21 @@ class VulkanApp {
     }
 
     void UpdateUniformBuffer(uint32_t currentImage) {
+        static auto startTime = std::chrono::high_resolution_clock::now();
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float time =
+            std::chrono::duration<float>(currentTime - startTime).count();
+
         UniformBufferObject ubo{};
-        ubo.transform = BuildTransform();
+        ubo.transform = BuildTransform(time);
 
         std::memcpy(uniformBuffersMapped_[currentImage], &ubo, sizeof(ubo));
     }
 
-    std::array<float, 16> BuildTransform() const {
+    std::array<float, 16> BuildTransform(float time) const {
         float aspect = static_cast<float>(swapChainExtent_.width) /
                        static_cast<float>(swapChainExtent_.height);
-        auto model = RotationYMatrix(30.0f);
+        auto model = RotationYMatrix(time * kRotationSpeedDegrees);
         auto view = TranslationMatrix(0.0f, 0.0f, -2.5f);
         auto projection = PerspectiveMatrix(45.0f, aspect, 0.1f, 10.0f);
         return MultiplyMatrix(projection, MultiplyMatrix(view, model));

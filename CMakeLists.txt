@@ -10,6 +10,8 @@ find_package(glfw3 REQUIRED)
 
 add_executable(vulkan_cube
     src/main.cpp
+    src/math_utils.cpp
+    src/vulkan_helpers.cpp
 )
 
 target_compile_definitions(vulkan_cube PRIVATE GLFW_INCLUDE_VULKAN)

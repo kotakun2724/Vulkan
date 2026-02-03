@@ -224,9 +224,24 @@ class VulkanApp {
     }
 
     void MainLoop() {
+        auto lastTime = std::chrono::high_resolution_clock::now();
+        int frameCount = 0;
         while (!glfwWindowShouldClose(window_)) {
             glfwPollEvents();
             DrawFrame();
+
+            ++frameCount;
+            auto now = std::chrono::high_resolution_clock::now();
+            float elapsed =
+                std::chrono::duration<float>(now - lastTime).count();
+            if (elapsed >= 1.0f) {
+                float fps = static_cast<float>(frameCount) / elapsed;
+                std::string title =
+                    "Vulkan Cube - FPS: " + std::to_string(fps);
+                glfwSetWindowTitle(window_, title.c_str());
+                frameCount = 0;
+                lastTime = now;
+            }
         }
         vkDeviceWaitIdle(device_);
     }
@@ -835,18 +850,18 @@ class VulkanApp {
     void CreateDepthResources() {
         VkFormat depthFormat = FindDepthFormat();
 
-        vkhelpers::CreateImage(
-            device_, physicalDevice_, swapChainExtent_.width,
-            swapChainExtent_.height, depthFormat, VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage_,
-            depthImageMemory_);
+        vkhelpers::CreateImage(device_, physicalDevice_, swapChainExtent_.width,
+                               swapChainExtent_.height, depthFormat,
+                               VK_IMAGE_TILING_OPTIMAL,
+                               VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage_,
+                               depthImageMemory_);
         VkImageAspectFlags aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
         if (HasStencilComponent(depthFormat)) {
             aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
         }
-        depthImageView_ =
-            vkhelpers::CreateImageView(device_, depthImage_, depthFormat, aspect);
+        depthImageView_ = vkhelpers::CreateImageView(device_, depthImage_,
+                                                     depthFormat, aspect);
     }
 
     void DestroyDepthResources() {
@@ -883,22 +898,22 @@ class VulkanApp {
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
-        vkhelpers::CreateBuffer(
-            device_, physicalDevice_, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            stagingBuffer, stagingBufferMemory);
+        vkhelpers::CreateBuffer(device_, physicalDevice_, bufferSize,
+                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                stagingBuffer, stagingBufferMemory);
 
         void* data = nullptr;
         vkMapMemory(device_, stagingBufferMemory, 0, bufferSize, 0, &data);
         std::memcpy(data, kVertices.data(), static_cast<size_t>(bufferSize));
         vkUnmapMemory(device_, stagingBufferMemory);
 
-        vkhelpers::CreateBuffer(
-            device_, physicalDevice_, bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer_,
-            vertexBufferMemory_);
+        vkhelpers::CreateBuffer(device_, physicalDevice_, bufferSize,
+                                VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                vertexBuffer_, vertexBufferMemory_);
 
         vkhelpers::CopyBuffer(device_, graphicsQueue_, commandPool_,
                               stagingBuffer, vertexBuffer_, bufferSize);
@@ -912,11 +927,11 @@ class VulkanApp {
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
-        vkhelpers::CreateBuffer(
-            device_, physicalDevice_, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            stagingBuffer, stagingBufferMemory);
+        vkhelpers::CreateBuffer(device_, physicalDevice_, bufferSize,
+                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                stagingBuffer, stagingBufferMemory);
 
         void* data = nullptr;
         vkMapMemory(device_, stagingBufferMemory, 0, bufferSize, 0, &data);
@@ -944,12 +959,12 @@ class VulkanApp {
         uniformBuffersMapped_.resize(swapChainImages_.size());
 
         for (size_t i = 0; i < swapChainImages_.size(); ++i) {
-            vkhelpers::CreateBuffer(
-                device_, physicalDevice_, bufferSize,
-                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                uniformBuffers_[i], uniformBuffersMemory_[i]);
+            vkhelpers::CreateBuffer(device_, physicalDevice_, bufferSize,
+                                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                    uniformBuffers_[i],
+                                    uniformBuffersMemory_[i]);
             if (vkMapMemory(device_, uniformBuffersMemory_[i], 0, bufferSize, 0,
                             &uniformBuffersMapped_[i]) != VK_SUCCESS) {
                 throw std::runtime_error("Failed to map uniform buffer memory");

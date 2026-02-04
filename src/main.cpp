@@ -184,6 +184,11 @@ class VulkanApp {
     std::vector<VkFence> imagesInFlight_;
     size_t currentFrame_ = 0;
     bool framebufferResized_ = false;
+    float cameraX_ = 0.0f;
+    float cameraY_ = 0.0f;
+    float cameraZ_ = -2.5f;
+    bool rotateEnabled_ = true;
+    bool spaceWasPressed_ = false;
 
     void InitWindow() {
         if (!glfwInit()) {
@@ -225,25 +230,60 @@ class VulkanApp {
 
     void MainLoop() {
         auto lastTime = std::chrono::high_resolution_clock::now();
+        auto lastInputTime = lastTime;
         int frameCount = 0;
         while (!glfwWindowShouldClose(window_)) {
             glfwPollEvents();
+            auto now = std::chrono::high_resolution_clock::now();
+            float deltaSeconds =
+                std::chrono::duration<float>(now - lastInputTime).count();
+            lastInputTime = now;
+
+            HandleInput(deltaSeconds);
             DrawFrame();
 
             ++frameCount;
-            auto now = std::chrono::high_resolution_clock::now();
             float elapsed =
                 std::chrono::duration<float>(now - lastTime).count();
             if (elapsed >= 1.0f) {
                 float fps = static_cast<float>(frameCount) / elapsed;
-                std::string title =
-                    "Vulkan Cube - FPS: " + std::to_string(fps);
+                std::string title = "Vulkan Cube - FPS: " + std::to_string(fps);
                 glfwSetWindowTitle(window_, title.c_str());
                 frameCount = 0;
                 lastTime = now;
             }
         }
         vkDeviceWaitIdle(device_);
+    }
+
+    void HandleInput(float deltaSeconds) {
+        constexpr float kMoveSpeed = 1.5f;
+        float step = kMoveSpeed * deltaSeconds;
+
+        if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) {
+            cameraZ_ += step;
+        }
+        if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS) {
+            cameraZ_ -= step;
+        }
+        if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS) {
+            cameraX_ -= step;
+        }
+        if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS) {
+            cameraX_ += step;
+        }
+        if (glfwGetKey(window_, GLFW_KEY_Q) == GLFW_PRESS) {
+            cameraY_ -= step;
+        }
+        if (glfwGetKey(window_, GLFW_KEY_E) == GLFW_PRESS) {
+            cameraY_ += step;
+        }
+
+        bool spacePressed = glfwGetKey(window_, GLFW_KEY_SPACE) == GLFW_PRESS;
+        if (spacePressed && !spaceWasPressed_) {
+            rotateEnabled_ = !rotateEnabled_;
+        }
+        spaceWasPressed_ = spacePressed;
     }
 
     void CleanupSwapChain() {
@@ -1201,8 +1241,9 @@ class VulkanApp {
     std::array<float, 16> BuildTransform(float time) const {
         float aspect = static_cast<float>(swapChainExtent_.width) /
                        static_cast<float>(swapChainExtent_.height);
-        auto model = math::RotationYMatrix(time * kRotationSpeedDegrees);
-        auto view = math::TranslationMatrix(0.0f, 0.0f, -2.5f);
+        float angle = rotateEnabled_ ? time * kRotationSpeedDegrees : 0.0f;
+        auto model = math::RotationYMatrix(angle);
+        auto view = math::TranslationMatrix(cameraX_, cameraY_, cameraZ_);
         auto projection = math::PerspectiveMatrix(45.0f, aspect, 0.1f, 10.0f);
         return math::MultiplyMatrix(projection,
                                     math::MultiplyMatrix(view, model));

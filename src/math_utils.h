@@ -11,4 +11,3 @@ Mat4 TranslationMatrix(float x, float y, float z);
 Mat4 PerspectiveMatrix(float fovDegrees, float aspect, float zNear, float zFar);
 Mat4 MultiplyMatrix(const Mat4& a, const Mat4& b);
 }  // namespace math
-

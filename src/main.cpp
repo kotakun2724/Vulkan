@@ -189,6 +189,8 @@ class VulkanApp {
     float cameraZ_ = -2.5f;
     bool rotateEnabled_ = true;
     bool spaceWasPressed_ = false;
+    float rotationAngle_ = 0.0f;
+    float deltaSeconds_ = 0.0f;
 
     void InitWindow() {
         if (!glfwInit()) {
@@ -235,11 +237,11 @@ class VulkanApp {
         while (!glfwWindowShouldClose(window_)) {
             glfwPollEvents();
             auto now = std::chrono::high_resolution_clock::now();
-            float deltaSeconds =
+            deltaSeconds_ =
                 std::chrono::duration<float>(now - lastInputTime).count();
             lastInputTime = now;
 
-            HandleInput(deltaSeconds);
+            HandleInput(deltaSeconds_);
             DrawFrame();
 
             ++frameCount;
@@ -1227,21 +1229,18 @@ class VulkanApp {
     }
 
     void UpdateUniformBuffer(uint32_t currentImage) {
-        static auto startTime = std::chrono::high_resolution_clock::now();
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float time =
-            std::chrono::duration<float>(currentTime - startTime).count();
-
         UniformBufferObject ubo{};
-        ubo.transform = BuildTransform(time);
+        if (rotateEnabled_) {
+            rotationAngle_ += kRotationSpeedDegrees * deltaSeconds_;
+        }
+        ubo.transform = BuildTransform(rotationAngle_);
 
         std::memcpy(uniformBuffersMapped_[currentImage], &ubo, sizeof(ubo));
     }
 
-    std::array<float, 16> BuildTransform(float time) const {
+    std::array<float, 16> BuildTransform(float angle) const {
         float aspect = static_cast<float>(swapChainExtent_.width) /
                        static_cast<float>(swapChainExtent_.height);
-        float angle = rotateEnabled_ ? time * kRotationSpeedDegrees : 0.0f;
         auto model = math::RotationYMatrix(angle);
         auto view = math::TranslationMatrix(cameraX_, cameraY_, cameraZ_);
         auto projection = math::PerspectiveMatrix(45.0f, aspect, 0.1f, 10.0f);

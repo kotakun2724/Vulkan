@@ -1,9 +1,9 @@
 #pragma once
 
+#include <vulkan/vulkan.h>
+
 #include <cstdint>
 #include <vector>
-
-#include <vulkan/vulkan.h>
 
 namespace vkhelpers {
 VkCommandBuffer BeginSingleTimeCommands(VkDevice device,
@@ -19,10 +19,11 @@ void CreateBuffer(VkDevice device, VkPhysicalDevice physicalDevice,
                   VkMemoryPropertyFlags properties, VkBuffer& buffer,
                   VkDeviceMemory& bufferMemory);
 
-void CreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width,
-                 uint32_t height, VkFormat format, VkImageTiling tiling,
-                 VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
-                 VkImage& image, VkDeviceMemory& imageMemory);
+void CreateImage(VkDevice device, VkPhysicalDevice physicalDevice,
+                 uint32_t width, uint32_t height, VkFormat format,
+                 VkImageTiling tiling, VkImageUsageFlags usage,
+                 VkMemoryPropertyFlags properties, VkImage& image,
+                 VkDeviceMemory& imageMemory);
 
 VkImageView CreateImageView(VkDevice device, VkImage image, VkFormat format,
                             VkImageAspectFlags aspectFlags);
@@ -34,4 +35,3 @@ VkFormat FindSupportedFormat(VkPhysicalDevice physicalDevice,
                              VkImageTiling tiling,
                              VkFormatFeatureFlags features);
 }  // namespace vkhelpers
-

@@ -70,8 +70,8 @@ void CreateBuffer(VkDevice device, VkPhysicalDevice physicalDevice,
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex =
-        FindMemoryType(physicalDevice, memRequirements.memoryTypeBits, properties);
+    allocInfo.memoryTypeIndex = FindMemoryType(
+        physicalDevice, memRequirements.memoryTypeBits, properties);
 
     if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) !=
         VK_SUCCESS) {
@@ -81,10 +81,11 @@ void CreateBuffer(VkDevice device, VkPhysicalDevice physicalDevice,
     vkBindBufferMemory(device, buffer, bufferMemory, 0);
 }
 
-void CreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width,
-                 uint32_t height, VkFormat format, VkImageTiling tiling,
-                 VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
-                 VkImage& image, VkDeviceMemory& imageMemory) {
+void CreateImage(VkDevice device, VkPhysicalDevice physicalDevice,
+                 uint32_t width, uint32_t height, VkFormat format,
+                 VkImageTiling tiling, VkImageUsageFlags usage,
+                 VkMemoryPropertyFlags properties, VkImage& image,
+                 VkDeviceMemory& imageMemory) {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -110,8 +111,8 @@ void CreateImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t widt
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex =
-        FindMemoryType(physicalDevice, memRequirements.memoryTypeBits, properties);
+    allocInfo.memoryTypeIndex = FindMemoryType(
+        physicalDevice, memRequirements.memoryTypeBits, properties);
 
     if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) !=
         VK_SUCCESS) {
@@ -178,4 +179,3 @@ VkFormat FindSupportedFormat(VkPhysicalDevice physicalDevice,
     throw std::runtime_error("Failed to find supported format");
 }
 }  // namespace vkhelpers
-

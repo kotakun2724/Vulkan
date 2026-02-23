@@ -98,9 +98,8 @@ std::vector<Vertex> GenerateTerrainVertices() {
         for (int x = 0; x < kGridSize; ++x) {
             float worldX = x * kGridScale - half;
             float worldZ = z * kGridScale - half;
-            float height =
-                std::sin(worldX * kHeightFrequency) *
-                std::sin(worldZ * kHeightFrequency) * kHeightScale;
+            float height = std::sin(worldX * kHeightFrequency) *
+                           std::sin(worldZ * kHeightFrequency) * kHeightScale;
             float t = (height / kHeightScale + 1.0f) * 0.5f;
             Vertex v{};
             v.position[0] = worldX;
@@ -235,7 +234,7 @@ class VulkanApp {
         }
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         window_ =
-            glfwCreateWindow(kWidth, kHeight, "Vulkan Cube", nullptr, nullptr);
+            glfwCreateWindow(kWidth, kHeight, "Vulkan Terrain", nullptr, nullptr);
         if (!window_) {
             glfwTerminate();
             throw std::runtime_error("Failed to create GLFW window");

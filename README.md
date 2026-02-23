@@ -1,6 +1,6 @@
-# Vulkan Cube (macOS + MoltenVK)
+# Vulkan Terrain (macOS + MoltenVK)
 
-macOSでVulkan SDK（MoltenVK同梱）を使い、GLFWでウィンドウを作成して3D立方体を描画します。
+macOSでVulkan SDK（MoltenVK同梱）を使い、GLFWでウィンドウを作成して地形を描画します。
 
 ## スクリーンショット
 
@@ -38,7 +38,7 @@ cmake --build .
 ## 実行
 
 ```
-./vulkan_cube
+./vulkan_terrain
 ```
 
 ## 補足

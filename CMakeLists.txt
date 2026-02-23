@@ -8,15 +8,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
 
-add_executable(vulkan_cube
+add_executable(vulkan_terrain
     src/main.cpp
     src/math_utils.cpp
     src/vulkan_helpers.cpp
 )
 
-target_compile_definitions(vulkan_cube PRIVATE GLFW_INCLUDE_VULKAN)
-target_include_directories(vulkan_cube PRIVATE ${Vulkan_INCLUDE_DIRS})
-target_link_libraries(vulkan_cube PRIVATE glfw Vulkan::Vulkan)
+target_compile_definitions(vulkan_terrain PRIVATE GLFW_INCLUDE_VULKAN)
+target_include_directories(vulkan_terrain PRIVATE ${Vulkan_INCLUDE_DIRS})
+target_link_libraries(vulkan_terrain PRIVATE glfw Vulkan::Vulkan)
 
 set(SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
 set(SHADER_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
@@ -40,9 +40,9 @@ add_custom_target(shaders ALL
         ${SHADER_BUILD_DIR}/triangle.frag.spv
 )
 
-add_dependencies(vulkan_cube shaders)
+add_dependencies(vulkan_terrain shaders)
 
-target_compile_definitions(vulkan_cube PRIVATE
+target_compile_definitions(vulkan_terrain PRIVATE
     SHADER_VERT_PATH="${SHADER_BUILD_DIR}/triangle.vert.spv"
     SHADER_FRAG_PATH="${SHADER_BUILD_DIR}/triangle.frag.spv"
 )

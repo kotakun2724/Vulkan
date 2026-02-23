@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -83,25 +84,60 @@ struct Vertex {
     }
 };
 
-const std::vector<Vertex> kVertices = {
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.2f, 0.2f}},
-    {{0.5f, -0.5f, -0.5f}, {0.2f, 1.0f, 0.2f}},
-    {{0.5f, 0.5f, -0.5f}, {0.2f, 0.2f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 0.2f}},
-    {{-0.5f, -0.5f, 0.5f}, {1.0f, 0.2f, 1.0f}},
-    {{0.5f, -0.5f, 0.5f}, {0.2f, 1.0f, 1.0f}},
-    {{0.5f, 0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.5f}, {0.4f, 0.6f, 1.0f}},
-};
+constexpr int kGridSize = 64;
+constexpr float kGridScale = 0.15f;
+constexpr float kHeightScale = 0.6f;
+constexpr float kHeightFrequency = 0.35f;
 
-const std::vector<uint16_t> kIndices = {
-    0, 1, 2, 2, 3, 0,  // back
-    4, 5, 6, 6, 7, 4,  // front
-    4, 5, 1, 1, 0, 4,  // bottom
-    7, 6, 2, 2, 3, 7,  // top
-    4, 0, 3, 3, 7, 4,  // left
-    5, 1, 2, 2, 6, 5,  // right
-};
+std::vector<Vertex> GenerateTerrainVertices() {
+    std::vector<Vertex> vertices;
+    vertices.reserve(kGridSize * kGridSize);
+
+    float half = (kGridSize - 1) * kGridScale * 0.5f;
+    for (int z = 0; z < kGridSize; ++z) {
+        for (int x = 0; x < kGridSize; ++x) {
+            float worldX = x * kGridScale - half;
+            float worldZ = z * kGridScale - half;
+            float height = std::sin(worldX * kHeightFrequency) *
+                           std::sin(worldZ * kHeightFrequency) * kHeightScale;
+            float t = (height / kHeightScale + 1.0f) * 0.5f;
+            Vertex v{};
+            v.position[0] = worldX;
+            v.position[1] = height;
+            v.position[2] = worldZ;
+            v.color[0] = 0.2f + 0.6f * t;
+            v.color[1] = 0.4f + 0.5f * t;
+            v.color[2] = 0.2f + 0.3f * t;
+            vertices.push_back(v);
+        }
+    }
+    return vertices;
+}
+
+std::vector<uint32_t> GenerateTerrainIndices() {
+    std::vector<uint32_t> indices;
+    indices.reserve((kGridSize - 1) * (kGridSize - 1) * 6);
+
+    for (int z = 0; z < kGridSize - 1; ++z) {
+        for (int x = 0; x < kGridSize - 1; ++x) {
+            uint32_t i0 = static_cast<uint32_t>(z * kGridSize + x);
+            uint32_t i1 = static_cast<uint32_t>(z * kGridSize + x + 1);
+            uint32_t i2 = static_cast<uint32_t>((z + 1) * kGridSize + x);
+            uint32_t i3 = static_cast<uint32_t>((z + 1) * kGridSize + x + 1);
+
+            indices.push_back(i0);
+            indices.push_back(i2);
+            indices.push_back(i1);
+            indices.push_back(i1);
+            indices.push_back(i2);
+            indices.push_back(i3);
+        }
+    }
+    return indices;
+}
+
+const std::vector<Vertex> kVertices = GenerateTerrainVertices();
+const std::vector<uint32_t> kIndices = GenerateTerrainIndices();
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
@@ -198,7 +234,7 @@ class VulkanApp {
         }
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         window_ =
-            glfwCreateWindow(kWidth, kHeight, "Vulkan Cube", nullptr, nullptr);
+            glfwCreateWindow(kWidth, kHeight, "Vulkan Terrain", nullptr, nullptr);
         if (!window_) {
             glfwTerminate();
             throw std::runtime_error("Failed to create GLFW window");
@@ -1116,7 +1152,7 @@ class VulkanApp {
             vkCmdBindVertexBuffers(commandBuffers_[i], 0, 1, vertexBuffers,
                                    offsets);
             vkCmdBindIndexBuffer(commandBuffers_[i], indexBuffer_, 0,
-                                 VK_INDEX_TYPE_UINT16);
+                                 VK_INDEX_TYPE_UINT32);
             vkCmdBindDescriptorSets(
                 commandBuffers_[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                 pipelineLayout_, 0, 1, &descriptorSets_[i], 0, nullptr);

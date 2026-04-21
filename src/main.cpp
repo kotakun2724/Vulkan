@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <random>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -23,7 +24,11 @@ namespace {
 constexpr uint32_t kWidth = 800;
 constexpr uint32_t kHeight = 600;
 constexpr int kMaxFramesInFlight = 2;
-constexpr float kRotationSpeedDegrees = 45.0f;
+constexpr int kBoardWidth = 10;
+constexpr int kBoardHeight = 20;
+constexpr float kCellSize = 0.09f;
+constexpr float kBoardLeft = -0.45f;
+constexpr float kBoardTop = 0.9f;
 
 const std::vector<const char*> kValidationLayers = {
     "VK_LAYER_KHRONOS_validation",
@@ -84,60 +89,65 @@ struct Vertex {
     }
 };
 
-constexpr int kGridSize = 64;
-constexpr float kGridScale = 0.15f;
-constexpr float kHeightScale = 0.6f;
-constexpr float kHeightFrequency = 0.35f;
-
-std::vector<Vertex> GenerateTerrainVertices() {
-    std::vector<Vertex> vertices;
-    vertices.reserve(kGridSize * kGridSize);
-
-    float half = (kGridSize - 1) * kGridScale * 0.5f;
-    for (int z = 0; z < kGridSize; ++z) {
-        for (int x = 0; x < kGridSize; ++x) {
-            float worldX = x * kGridScale - half;
-            float worldZ = z * kGridScale - half;
-            float height = std::sin(worldX * kHeightFrequency) *
-                           std::sin(worldZ * kHeightFrequency) * kHeightScale;
-            float t = (height / kHeightScale + 1.0f) * 0.5f;
-            Vertex v{};
-            v.position[0] = worldX;
-            v.position[1] = height;
-            v.position[2] = worldZ;
-            v.color[0] = 0.2f + 0.6f * t;
-            v.color[1] = 0.4f + 0.5f * t;
-            v.color[2] = 0.2f + 0.3f * t;
-            vertices.push_back(v);
-        }
+std::array<std::array<int, 2>, 4> TetrominoBlocks(int type, int rotation) {
+    switch (type) {
+        case 0:  // I
+            switch (rotation % 4) {
+                case 0: return {{{{0, 1}}, {{1, 1}}, {{2, 1}}, {{3, 1}}}};
+                case 1: return {{{{2, 0}}, {{2, 1}}, {{2, 2}}, {{2, 3}}}};
+                case 2: return {{{{0, 2}}, {{1, 2}}, {{2, 2}}, {{3, 2}}}};
+                default: return {{{{1, 0}}, {{1, 1}}, {{1, 2}}, {{1, 3}}}};
+            }
+        case 1:  // O
+            return {{{{1, 0}}, {{2, 0}}, {{1, 1}}, {{2, 1}}}};
+        case 2:  // T
+            switch (rotation % 4) {
+                case 0: return {{{{1, 0}}, {{0, 1}}, {{1, 1}}, {{2, 1}}}};
+                case 1: return {{{{1, 0}}, {{1, 1}}, {{2, 1}}, {{1, 2}}}};
+                case 2: return {{{{0, 1}}, {{1, 1}}, {{2, 1}}, {{1, 2}}}};
+                default: return {{{{1, 0}}, {{0, 1}}, {{1, 1}}, {{1, 2}}}};
+            }
+        case 3:  // S
+            switch (rotation % 4) {
+                case 0: return {{{{1, 0}}, {{2, 0}}, {{0, 1}}, {{1, 1}}}};
+                case 1: return {{{{1, 0}}, {{1, 1}}, {{2, 1}}, {{2, 2}}}};
+                case 2: return {{{{1, 1}}, {{2, 1}}, {{0, 2}}, {{1, 2}}}};
+                default: return {{{{0, 0}}, {{0, 1}}, {{1, 1}}, {{1, 2}}}};
+            }
+        case 4:  // Z
+            switch (rotation % 4) {
+                case 0: return {{{{0, 0}}, {{1, 0}}, {{1, 1}}, {{2, 1}}}};
+                case 1: return {{{{2, 0}}, {{1, 1}}, {{2, 1}}, {{1, 2}}}};
+                case 2: return {{{{0, 1}}, {{1, 1}}, {{1, 2}}, {{2, 2}}}};
+                default: return {{{{1, 0}}, {{0, 1}}, {{1, 1}}, {{0, 2}}}};
+            }
+        case 5:  // J
+            switch (rotation % 4) {
+                case 0: return {{{{0, 0}}, {{0, 1}}, {{1, 1}}, {{2, 1}}}};
+                case 1: return {{{{1, 0}}, {{2, 0}}, {{1, 1}}, {{1, 2}}}};
+                case 2: return {{{{0, 1}}, {{1, 1}}, {{2, 1}}, {{2, 2}}}};
+                default: return {{{{1, 0}}, {{1, 1}}, {{0, 2}}, {{1, 2}}}};
+            }
+        default:  // L
+            switch (rotation % 4) {
+                case 0: return {{{{2, 0}}, {{0, 1}}, {{1, 1}}, {{2, 1}}}};
+                case 1: return {{{{1, 0}}, {{1, 1}}, {{1, 2}}, {{2, 2}}}};
+                case 2: return {{{{0, 1}}, {{1, 1}}, {{2, 1}}, {{0, 2}}}};
+                default: return {{{{0, 0}}, {{1, 0}}, {{1, 1}}, {{1, 2}}}};
+            }
     }
-    return vertices;
 }
 
-std::vector<uint32_t> GenerateTerrainIndices() {
-    std::vector<uint32_t> indices;
-    indices.reserve((kGridSize - 1) * (kGridSize - 1) * 6);
-
-    for (int z = 0; z < kGridSize - 1; ++z) {
-        for (int x = 0; x < kGridSize - 1; ++x) {
-            uint32_t i0 = static_cast<uint32_t>(z * kGridSize + x);
-            uint32_t i1 = static_cast<uint32_t>(z * kGridSize + x + 1);
-            uint32_t i2 = static_cast<uint32_t>((z + 1) * kGridSize + x);
-            uint32_t i3 = static_cast<uint32_t>((z + 1) * kGridSize + x + 1);
-
-            indices.push_back(i0);
-            indices.push_back(i2);
-            indices.push_back(i1);
-            indices.push_back(i1);
-            indices.push_back(i2);
-            indices.push_back(i3);
-        }
-    }
-    return indices;
-}
-
-const std::vector<Vertex> kVertices = GenerateTerrainVertices();
-const std::vector<uint32_t> kIndices = GenerateTerrainIndices();
+const std::array<std::array<float, 3>, 8> kPieceColors = {{
+    {{0.08f, 0.08f, 0.08f}},  // empty
+    {{0.10f, 0.85f, 0.95f}},  // I
+    {{0.95f, 0.85f, 0.20f}},  // O
+    {{0.80f, 0.30f, 0.90f}},  // T
+    {{0.15f, 0.85f, 0.25f}},  // S
+    {{0.90f, 0.15f, 0.20f}},  // Z
+    {{0.20f, 0.35f, 0.95f}},  // J
+    {{0.95f, 0.55f, 0.15f}},  // L
+}};
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
@@ -182,6 +192,13 @@ class VulkanApp {
     }
 
    private:
+    struct ActivePiece {
+        int type = 0;
+        int rotation = 0;
+        int x = 3;
+        int y = 0;
+    };
+
     GLFWwindow* window_ = nullptr;
     VkInstance instance_ = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT debugMessenger_ = VK_NULL_HANDLE;
@@ -220,21 +237,28 @@ class VulkanApp {
     std::vector<VkFence> imagesInFlight_;
     size_t currentFrame_ = 0;
     bool framebufferResized_ = false;
-    float cameraX_ = 0.0f;
-    float cameraY_ = 0.0f;
-    float cameraZ_ = -2.5f;
-    bool rotateEnabled_ = true;
-    bool spaceWasPressed_ = false;
-    float rotationAngle_ = 0.0f;
     float deltaSeconds_ = 0.0f;
+    std::array<int, kBoardWidth * kBoardHeight> board_{};
+    ActivePiece activePiece_{};
+    bool gameOver_ = false;
+    bool hasActivePiece_ = false;
+    float fallAccumulator_ = 0.0f;
+    uint32_t linesCleared_ = 0;
+    bool leftWasPressed_ = false;
+    bool rightWasPressed_ = false;
+    bool rotateWasPressed_ = false;
+    std::vector<Vertex> vertices_;
+    std::vector<uint32_t> indices_;
+    uint32_t indexCount_ = 0;
+    std::mt19937 rng_{std::random_device{}()};
 
     void InitWindow() {
         if (!glfwInit()) {
             throw std::runtime_error("Failed to initialize GLFW");
         }
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window_ =
-            glfwCreateWindow(kWidth, kHeight, "Vulkan Terrain", nullptr, nullptr);
+        window_ = glfwCreateWindow(kWidth, kHeight, "Vulkan Terrain", nullptr,
+                                   nullptr);
         if (!window_) {
             glfwTerminate();
             throw std::runtime_error("Failed to create GLFW window");
@@ -257,6 +281,8 @@ class VulkanApp {
         CreateDepthResources();
         CreateFramebuffers();
         CreateCommandPool();
+        InitTetris();
+        RebuildTetrisMesh();
         CreateVertexBuffer();
         CreateIndexBuffer();
         CreateUniformBuffers();
@@ -278,6 +304,7 @@ class VulkanApp {
             lastInputTime = now;
 
             HandleInput(deltaSeconds_);
+            UpdateTetris(deltaSeconds_);
             DrawFrame();
 
             ++frameCount;
@@ -285,7 +312,11 @@ class VulkanApp {
                 std::chrono::duration<float>(now - lastTime).count();
             if (elapsed >= 1.0f) {
                 float fps = static_cast<float>(frameCount) / elapsed;
-                std::string title = "Vulkan Cube - FPS: " + std::to_string(fps);
+                std::string title = "Vulkan Tetris - FPS: " + std::to_string(fps) +
+                                    " Lines: " + std::to_string(linesCleared_);
+                if (gameOver_) {
+                    title += " [Game Over]";
+                }
                 glfwSetWindowTitle(window_, title.c_str());
                 frameCount = 0;
                 lastTime = now;
@@ -295,33 +326,213 @@ class VulkanApp {
     }
 
     void HandleInput(float deltaSeconds) {
-        constexpr float kMoveSpeed = 1.5f;
-        float step = kMoveSpeed * deltaSeconds;
-
-        if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) {
-            cameraZ_ += step;
-        }
-        if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS) {
-            cameraZ_ -= step;
-        }
-        if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS) {
-            cameraX_ -= step;
-        }
-        if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS) {
-            cameraX_ += step;
-        }
-        if (glfwGetKey(window_, GLFW_KEY_Q) == GLFW_PRESS) {
-            cameraY_ -= step;
-        }
-        if (glfwGetKey(window_, GLFW_KEY_E) == GLFW_PRESS) {
-            cameraY_ += step;
+        (void)deltaSeconds;
+        if (gameOver_ || !hasActivePiece_) {
+            return;
         }
 
-        bool spacePressed = glfwGetKey(window_, GLFW_KEY_SPACE) == GLFW_PRESS;
-        if (spacePressed && !spaceWasPressed_) {
-            rotateEnabled_ = !rotateEnabled_;
+        bool leftPressed = glfwGetKey(window_, GLFW_KEY_LEFT) == GLFW_PRESS;
+        if (leftPressed && !leftWasPressed_) {
+            TryMovePiece(-1, 0);
         }
-        spaceWasPressed_ = spacePressed;
+        leftWasPressed_ = leftPressed;
+
+        bool rightPressed = glfwGetKey(window_, GLFW_KEY_RIGHT) == GLFW_PRESS;
+        if (rightPressed && !rightWasPressed_) {
+            TryMovePiece(1, 0);
+        }
+        rightWasPressed_ = rightPressed;
+
+        bool rotatePressed = glfwGetKey(window_, GLFW_KEY_UP) == GLFW_PRESS;
+        if (rotatePressed && !rotateWasPressed_) {
+            TryRotatePiece();
+        }
+        rotateWasPressed_ = rotatePressed;
+
+        if (glfwGetKey(window_, GLFW_KEY_DOWN) == GLFW_PRESS) {
+            if (!TryMovePiece(0, 1)) {
+                LockActivePiece();
+            }
+        }
+    }
+
+    int& CellAt(int x, int y) {
+        return board_[static_cast<size_t>(y * kBoardWidth + x)];
+    }
+
+    int CellAt(int x, int y) const {
+        return board_[static_cast<size_t>(y * kBoardWidth + x)];
+    }
+
+    void InitTetris() {
+        board_.fill(0);
+        linesCleared_ = 0;
+        gameOver_ = false;
+        hasActivePiece_ = false;
+        SpawnPiece();
+    }
+
+    bool CanPlace(int type, int rotation, int x, int y) const {
+        auto blocks = TetrominoBlocks(type, rotation);
+        for (const auto& block : blocks) {
+            int gx = x + block[0];
+            int gy = y + block[1];
+            if (gx < 0 || gx >= kBoardWidth || gy < 0 || gy >= kBoardHeight) {
+                return false;
+            }
+            if (CellAt(gx, gy) != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void SpawnPiece() {
+        std::uniform_int_distribution<int> pickPiece(0, 6);
+        activePiece_.type = pickPiece(rng_);
+        activePiece_.rotation = 0;
+        activePiece_.x = 3;
+        activePiece_.y = 0;
+        hasActivePiece_ = true;
+        if (!CanPlace(activePiece_.type, activePiece_.rotation, activePiece_.x,
+                      activePiece_.y)) {
+            gameOver_ = true;
+            hasActivePiece_ = false;
+        }
+    }
+
+    bool TryMovePiece(int dx, int dy) {
+        int nx = activePiece_.x + dx;
+        int ny = activePiece_.y + dy;
+        if (!CanPlace(activePiece_.type, activePiece_.rotation, nx, ny)) {
+            return false;
+        }
+        activePiece_.x = nx;
+        activePiece_.y = ny;
+        RebuildTetrisMesh();
+        return true;
+    }
+
+    void TryRotatePiece() {
+        int nr = (activePiece_.rotation + 1) % 4;
+        if (CanPlace(activePiece_.type, nr, activePiece_.x, activePiece_.y)) {
+            activePiece_.rotation = nr;
+            RebuildTetrisMesh();
+        }
+    }
+
+    void ClearLines() {
+        int writeY = kBoardHeight - 1;
+        for (int y = kBoardHeight - 1; y >= 0; --y) {
+            bool full = true;
+            for (int x = 0; x < kBoardWidth; ++x) {
+                if (CellAt(x, y) == 0) {
+                    full = false;
+                    break;
+                }
+            }
+            if (!full) {
+                if (writeY != y) {
+                    for (int x = 0; x < kBoardWidth; ++x) {
+                        CellAt(x, writeY) = CellAt(x, y);
+                    }
+                }
+                --writeY;
+            } else {
+                ++linesCleared_;
+            }
+        }
+        for (int y = writeY; y >= 0; --y) {
+            for (int x = 0; x < kBoardWidth; ++x) {
+                CellAt(x, y) = 0;
+            }
+        }
+    }
+
+    void LockActivePiece() {
+        auto blocks = TetrominoBlocks(activePiece_.type, activePiece_.rotation);
+        for (const auto& block : blocks) {
+            int gx = activePiece_.x + block[0];
+            int gy = activePiece_.y + block[1];
+            if (gx >= 0 && gx < kBoardWidth && gy >= 0 && gy < kBoardHeight) {
+                CellAt(gx, gy) = activePiece_.type + 1;
+            }
+        }
+        ClearLines();
+        SpawnPiece();
+        RebuildTetrisMesh();
+    }
+
+    void UpdateTetris(float deltaSeconds) {
+        if (gameOver_ || !hasActivePiece_) {
+            return;
+        }
+        fallAccumulator_ += deltaSeconds;
+        constexpr float kNormalFallInterval = 0.45f;
+        constexpr float kSoftDropInterval = 0.05f;
+        float currentInterval =
+            (glfwGetKey(window_, GLFW_KEY_DOWN) == GLFW_PRESS)
+                ? kSoftDropInterval
+                : kNormalFallInterval;
+        if (fallAccumulator_ >= currentInterval) {
+            fallAccumulator_ = 0.0f;
+            if (!TryMovePiece(0, 1)) {
+                LockActivePiece();
+            }
+        }
+    }
+
+    void AddCellQuad(int cellX, int cellY, int colorIndex) {
+        float x0 = kBoardLeft + static_cast<float>(cellX) * kCellSize;
+        float y0 = kBoardTop - static_cast<float>(cellY) * kCellSize;
+        float x1 = x0 + kCellSize;
+        float y1 = y0 - kCellSize;
+        float z = 0.0f;
+        const auto& c = kPieceColors[static_cast<size_t>(colorIndex)];
+        uint32_t base = static_cast<uint32_t>(vertices_.size());
+        vertices_.push_back({{x0, y0, z}, {c[0], c[1], c[2]}});
+        vertices_.push_back({{x1, y0, z}, {c[0], c[1], c[2]}});
+        vertices_.push_back({{x1, y1, z}, {c[0], c[1], c[2]}});
+        vertices_.push_back({{x0, y1, z}, {c[0], c[1], c[2]}});
+        indices_.insert(indices_.end(),
+                        {base, base + 1, base + 2, base, base + 2, base + 3});
+    }
+
+    void RebuildTetrisMesh() {
+        vertices_.clear();
+        indices_.clear();
+        vertices_.reserve(kBoardWidth * kBoardHeight * 4);
+        indices_.reserve(kBoardWidth * kBoardHeight * 6);
+        for (int y = 0; y < kBoardHeight; ++y) {
+            for (int x = 0; x < kBoardWidth; ++x) {
+                int cell = CellAt(x, y);
+                if (cell != 0) {
+                    AddCellQuad(x, y, cell);
+                }
+            }
+        }
+        if (!gameOver_ && hasActivePiece_) {
+            auto blocks = TetrominoBlocks(activePiece_.type, activePiece_.rotation);
+            for (const auto& block : blocks) {
+                AddCellQuad(activePiece_.x + block[0], activePiece_.y + block[1],
+                            activePiece_.type + 1);
+            }
+        }
+        indexCount_ = static_cast<uint32_t>(indices_.size());
+        if (device_ != VK_NULL_HANDLE && commandPool_ != VK_NULL_HANDLE &&
+            vertexBuffer_ != VK_NULL_HANDLE && indexBuffer_ != VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(device_);
+            vkDestroyBuffer(device_, vertexBuffer_, nullptr);
+            vkFreeMemory(device_, vertexBufferMemory_, nullptr);
+            vkDestroyBuffer(device_, indexBuffer_, nullptr);
+            vkFreeMemory(device_, indexBufferMemory_, nullptr);
+            CreateVertexBuffer();
+            CreateIndexBuffer();
+            vkFreeCommandBuffers(device_, commandPool_,
+                                 static_cast<uint32_t>(commandBuffers_.size()),
+                                 commandBuffers_.data());
+            CreateCommandBuffers();
+        }
     }
 
     void CleanupSwapChain() {
@@ -972,7 +1183,11 @@ class VulkanApp {
     }
 
     void CreateVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(kVertices[0]) * kVertices.size();
+        VkDeviceSize bufferSize =
+            sizeof(Vertex) * static_cast<VkDeviceSize>(vertices_.size());
+        if (bufferSize == 0) {
+            throw std::runtime_error("No vertex data to upload");
+        }
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
@@ -984,7 +1199,7 @@ class VulkanApp {
 
         void* data = nullptr;
         vkMapMemory(device_, stagingBufferMemory, 0, bufferSize, 0, &data);
-        std::memcpy(data, kVertices.data(), static_cast<size_t>(bufferSize));
+        std::memcpy(data, vertices_.data(), static_cast<size_t>(bufferSize));
         vkUnmapMemory(device_, stagingBufferMemory);
 
         vkhelpers::CreateBuffer(device_, physicalDevice_, bufferSize,
@@ -1001,7 +1216,11 @@ class VulkanApp {
     }
 
     void CreateIndexBuffer() {
-        VkDeviceSize bufferSize = sizeof(kIndices[0]) * kIndices.size();
+        VkDeviceSize bufferSize =
+            sizeof(uint32_t) * static_cast<VkDeviceSize>(indices_.size());
+        if (bufferSize == 0) {
+            throw std::runtime_error("No index data to upload");
+        }
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
@@ -1013,7 +1232,7 @@ class VulkanApp {
 
         void* data = nullptr;
         vkMapMemory(device_, stagingBufferMemory, 0, bufferSize, 0, &data);
-        std::memcpy(data, kIndices.data(), static_cast<size_t>(bufferSize));
+        std::memcpy(data, indices_.data(), static_cast<size_t>(bufferSize));
         vkUnmapMemory(device_, stagingBufferMemory);
 
         vkhelpers::CreateBuffer(
@@ -1157,8 +1376,7 @@ class VulkanApp {
                 commandBuffers_[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                 pipelineLayout_, 0, 1, &descriptorSets_[i], 0, nullptr);
             vkCmdDrawIndexed(commandBuffers_[i],
-                             static_cast<uint32_t>(kIndices.size()), 1, 0, 0,
-                             0);
+                             indexCount_, 1, 0, 0, 0);
             vkCmdEndRenderPass(commandBuffers_[i]);
 
             if (vkEndCommandBuffer(commandBuffers_[i]) != VK_SUCCESS) {
@@ -1266,22 +1484,15 @@ class VulkanApp {
 
     void UpdateUniformBuffer(uint32_t currentImage) {
         UniformBufferObject ubo{};
-        if (rotateEnabled_) {
-            rotationAngle_ += kRotationSpeedDegrees * deltaSeconds_;
-        }
-        ubo.transform = BuildTransform(rotationAngle_);
+        ubo.transform = BuildTransform(0.0f);
 
         std::memcpy(uniformBuffersMapped_[currentImage], &ubo, sizeof(ubo));
     }
 
     std::array<float, 16> BuildTransform(float angle) const {
-        float aspect = static_cast<float>(swapChainExtent_.width) /
-                       static_cast<float>(swapChainExtent_.height);
-        auto model = math::RotationYMatrix(angle);
-        auto view = math::TranslationMatrix(cameraX_, cameraY_, cameraZ_);
-        auto projection = math::PerspectiveMatrix(45.0f, aspect, 0.1f, 10.0f);
-        return math::MultiplyMatrix(projection,
-                                    math::MultiplyMatrix(view, model));
+        (void)angle;
+        return {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
     }
 
     std::vector<const char*> GetRequiredExtensions() {

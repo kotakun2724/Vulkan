@@ -47,3 +47,41 @@ target_compile_definitions(vulkan_terrain PRIVATE
     SHADER_FRAG_PATH="${SHADER_BUILD_DIR}/triangle.frag.spv"
 )
 
+# ---------------------------------------------------------------------------
+#  Ray tracing LT demo (software ray tracer running on macOS/MoltenVK)
+# ---------------------------------------------------------------------------
+add_executable(vulkan_raytracer
+    src/raytracer_main.cpp
+    src/math_utils.cpp
+    src/vulkan_helpers.cpp
+)
+
+target_compile_definitions(vulkan_raytracer PRIVATE GLFW_INCLUDE_VULKAN)
+target_include_directories(vulkan_raytracer PRIVATE ${Vulkan_INCLUDE_DIRS})
+target_link_libraries(vulkan_raytracer PRIVATE glfw Vulkan::Vulkan)
+
+add_custom_command(
+    OUTPUT ${SHADER_BUILD_DIR}/raytracer.vert.spv
+    COMMAND ${Vulkan_GLSLC_EXECUTABLE} -o ${SHADER_BUILD_DIR}/raytracer.vert.spv ${SHADER_DIR}/raytracer.vert
+    DEPENDS ${SHADER_DIR}/raytracer.vert
+)
+
+add_custom_command(
+    OUTPUT ${SHADER_BUILD_DIR}/raytracer.frag.spv
+    COMMAND ${Vulkan_GLSLC_EXECUTABLE} -o ${SHADER_BUILD_DIR}/raytracer.frag.spv ${SHADER_DIR}/raytracer.frag
+    DEPENDS ${SHADER_DIR}/raytracer.frag
+)
+
+add_custom_target(raytracer_shaders ALL
+    DEPENDS
+        ${SHADER_BUILD_DIR}/raytracer.vert.spv
+        ${SHADER_BUILD_DIR}/raytracer.frag.spv
+)
+
+add_dependencies(vulkan_raytracer raytracer_shaders)
+
+target_compile_definitions(vulkan_raytracer PRIVATE
+    SHADER_RT_VERT_PATH="${SHADER_BUILD_DIR}/raytracer.vert.spv"
+    SHADER_RT_FRAG_PATH="${SHADER_BUILD_DIR}/raytracer.frag.spv"
+)
+
